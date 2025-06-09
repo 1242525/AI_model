@@ -50,10 +50,9 @@ DATASETS = {
 
 # 모델 하이퍼파라미터
 MODEL_CONFIG = {
-    "input_dim": 128,
+    "input_dim": 64,  # ✅ 실제 데이터 차원으로 수정
     "hidden_dim": 256,
     "embedding_dim": 128,
-    "num_layers": 2,
     "dropout": 0.3
 }
 

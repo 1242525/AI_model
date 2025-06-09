@@ -84,28 +84,29 @@ class DatasetDownloader:
         """Balabit 마우스 데이터셋 다운로드"""
         mouse_dir = self.raw_dir / "mouse"
         mouse_dir.mkdir(exist_ok=True)
+        
+        # GitHub 리포지토리에서 직접 다운로드
+        urls = {
+            "training_files": "https://github.com/balabit/Mouse-Dynamics-Challenge/archive/master.zip",
+        }
 
-        # 더미 데이터 생성 (실제 환경에서는 실제 데이터셋 사용)
-        self._create_dummy_mouse_file(mouse_dir / "mouse_data.csv")
-        return True
+        success = True
+        for filename, url in urls.items():
+            save_path = mouse_dir / f"{filename}.zip"
+            
+            if save_path.exists():
+                print(f"파일이 이미 존재합니다: {save_path}")
+                continue
 
-    def _create_dummy_keystroke_file(self, file_path: Path):
-        """더미 키스트로크 파일 생성"""
-        print(f"더미 키스트로크 파일 생성: {file_path}")
+            if not self.download_file(url, save_path):
+                success = False
+            else:
+                # ZIP 파일 압축 해제
+                with zipfile.ZipFile(save_path, 'r') as zip_ref:
+                    zip_ref.extractall(mouse_dir)
+                print(f"압축 해제 완료: {save_path}")
 
-        # 더미 데이터 내용
-        header = "subject sessionIndex rep H.period DD.period.t UD.period.t H.t DD.t.i UD.t.i H.i DD.i.e UD.i.e H.e DD.e.five UD.e.five H.five DD.five.Shift.r UD.five.Shift.r H.Shift.r DD.Shift.r.o UD.Shift.r.o H.o DD.o.a UD.o.a H.a DD.a.n UD.a.n H.n DD.n.l UD.n.l H.l"
-
-        dummy_lines = [
-            "s002 1 1 0.151 0.234 0.083 0.142 0.201 0.059 0.123 0.189 0.066 0.134 0.223 0.089 0.156 0.345 0.189 0.098 0.234 0.136 0.145 0.198 0.053 0.167 0.223 0.056 0.134 0.201 0.067 0.123",
-            "s002 1 2 0.149 0.241 0.092 0.139 0.195 0.056 0.128 0.184 0.056 0.129 0.218 0.089 0.151 0.352 0.201 0.094 0.229 0.135 0.148 0.203 0.055 0.162 0.219 0.057 0.131 0.198 0.067 0.126",
-            "s003 1 1 0.144 0.228 0.084 0.138 0.198 0.060 0.126 0.187 0.061 0.131 0.220 0.089 0.154 0.348 0.194 0.096 0.232 0.136 0.147 0.200 0.053 0.165 0.221 0.056 0.133 0.199 0.066 0.125"
-        ]
-
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(header + "\n")
-            for line in dummy_lines:
-                f.write(line + "\n")
+        return success
 
     def _create_dummy_mouse_file(self, file_path: Path):
         """더미 마우스 파일 생성"""

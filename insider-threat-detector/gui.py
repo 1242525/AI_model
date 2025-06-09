@@ -206,16 +206,18 @@ class PlotWidget(FigureCanvas):
     """실시간 플롯 위젯"""
 
     def __init__(self):
-        self.figure = Figure(figsize=(10, 6))
+        self.figure = Figure(figsize=(10, 6), facecolor='none')
         super().__init__(self.figure)
-
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_title('위험도 변화')
-        self.ax.set_xlabel('시간')
-        self.ax.set_ylabel('위험도')
-
-        self.threat_scores = []
-        self.timestamps = []
+        self.ax = self.figure.add_subplot(111, facecolor='none')
+        
+        # 축 라벨 색상 설정
+        self.ax.xaxis.label.set_color('white')
+        self.ax.yaxis.label.set_color('white')
+        self.ax.title.set_color('white')
+        
+        # 틱 마커 색상 설정
+        self.ax.tick_params(axis='x', colors='white')
+        self.ax.tick_params(axis='y', colors='white')
 
     def update_plot(self, threat_score: float):
         """플롯 업데이트"""
@@ -440,14 +442,26 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("모니터링 정지됨")
         self.add_log("모니터링을 정지했습니다.")
 
-    def load_model(self):
-        """모델 로드"""
-        if self.threat_detector.load_model(str(BEST_MODEL_PATH)):
-            QMessageBox.information(self, "성공", "모델을 성공적으로 로드했습니다.")
-            self.add_log("모델 로드 완료")
-        else:
-            QMessageBox.warning(self, "오류", "모델 로드에 실패했습니다.")
-            self.add_log("모델 로드 실패")
+    def load_model(self, model_path: str):
+        """모델 로드 개선"""
+        try:
+            if not Path(model_path).exists():
+                raise FileNotFoundError(f"모델 파일 없음: {model_path}")
+                
+            checkpoint = torch.load(model_path, map_location='cpu')
+            self.model = SiameseNetwork(**checkpoint['config']['model'])
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.eval()
+            
+            # 성공 메시지 표시
+            QMessageBox.information(self, "성공", 
+                f"모델 버전: {checkpoint.get('version','1.0')}\n"
+                f"훈련 정확도: {checkpoint.get('accuracy',0):.2f}%")
+                
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"모델 로드 실패: {str(e)}")
+            return False
 
     def on_data_received(self, data: dict):
         """데이터 수신 처리"""

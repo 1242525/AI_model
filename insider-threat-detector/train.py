@@ -4,7 +4,7 @@
 설명: Siamese Network 훈련 메인 스크립트
 """
 
-from collections import defaultdict  # 추가된 부분
+from collections import defaultdict
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -53,6 +53,10 @@ class BehaviorDataset(Dataset):
 
         # 페어 생성
         self.pairs = self._create_pairs()
+        
+        # 차원 검증 코드 추가
+        assert self.keystroke_features.shape[1] == 64, f"Keystroke features must be 64, got {self.keystroke_features.shape[1]}"
+        assert self.mouse_features.shape[1] == 64, f"Mouse features must be 64, got {self.mouse_features.shape[1]}"
 
     def _create_pairs(self) -> List[Tuple]:
         """훈련용 positive/negative 페어 생성"""
@@ -84,11 +88,10 @@ class BehaviorDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        feature1, feature2, label = self.pairs[idx]
-
+        i, j, label = self.pairs[idx]  # 인덱스 추출
         return (
-            torch.tensor(feature1, dtype=torch.float32),
-            torch.tensor(feature2, dtype=torch.float32),
+            torch.tensor(self.keystroke_features[i], dtype=torch.float32),
+            torch.tensor(self.keystroke_features[j], dtype=torch.float32),
             torch.tensor(label, dtype=torch.float32)
         )
 
@@ -101,10 +104,10 @@ class Trainer:
         logger.info(f"사용 디바이스: {self.device}")
 
         # 모델 초기화
-        model_params = config['model'].copy()
-        model_params = config['model'].copy()
+        allowed_keys = ['input_dim', 'hidden_dim', 'embedding_dim', 'dropout']
+        model_params = {k: v for k, v in config['model'].items() if k in allowed_keys}
         self.model = SiameseNetwork(**model_params).to(self.device)
-        self.criterion = ContrastiveLoss(margin=config['training']['margin'])  # 훈련 설정에서 margin 사용
+        self.criterion = ContrastiveLoss(margin=config['training']['margin'])
         self.optimizer = optim.Adam(
             self.model.parameters(), 
             lr=config['training']['learning_rate']
@@ -121,8 +124,6 @@ class Trainer:
     def load_data(self) -> Tuple[DataLoader, DataLoader]:
         """데이터 로드 및 전처리"""
         logger.info("데이터 로드 시작...")
-
-        # 데이터셋 다운로드/확인
         setup_datasets()
 
         # 키스트로크 데이터 전처리
@@ -167,15 +168,15 @@ class Trainer:
             train_dataset,
             batch_size=self.config['training']['batch_size'],
             shuffle=True,
-            num_workers=0,  # Windows에서는 0으로 설정
-            persistent_workers=False  # Windows 호환성
+            num_workers=0,
+            persistent_workers=False
         )
 
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config['training']['batch_size'],
             shuffle=False,
-            num_workers=0,  # Windows에서는 0으로 설정
+            num_workers=0,
             persistent_workers=False
         )
 
@@ -251,8 +252,6 @@ class Trainer:
             self.val_losses.append(val_loss)
 
             logger.info(f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
-
-            # 모델 저장
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.save_model(BEST_MODEL_PATH)

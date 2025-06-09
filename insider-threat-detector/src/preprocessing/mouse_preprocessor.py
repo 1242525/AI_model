@@ -179,7 +179,6 @@ class MousePreprocessor:
 
     def extract_scroll_features(self, scroll_data: List[Dict]) -> Dict[str, float]:
         """스크롤 패턴 특징 추출"""
-        # ----------- [여기서부터 수정/추가] -----------
         if not scroll_data:
             return {
                 'scroll_frequency': 0, 'avg_scroll_interval': 0,
@@ -206,7 +205,6 @@ class MousePreprocessor:
             'scroll_speed': len(scroll_data) / (timestamps[-1] - timestamps[0]) if (timestamps[-1] - timestamps[0]) > 0 else 0,
         }
         return features
-        # ----------- [여기까지 수정/추가] -----------
 
     def create_session_features(self, session_data: pd.DataFrame) -> np.ndarray:
         """세션 데이터에서 특징 벡터 생성"""
@@ -225,8 +223,7 @@ class MousePreprocessor:
         # 클릭 특징 추출
         click_features = self.extract_click_features(click_events.to_dict('records'))
 
-        # ----------- [여기서부터 수정/추가] -----------
-        # 스크롤 이벤트 유효성 검증 추가
+        # 스크롤 특징 추출
         if scroll_events.empty:
             scroll_features = {
                 'scroll_frequency': 0,
@@ -245,7 +242,6 @@ class MousePreprocessor:
                 }
             else:
                 scroll_features = self.extract_scroll_features(scroll_events.to_dict('records'))
-        # ----------- [여기까지 수정/추가] -----------
 
         # 세션 전체 특징
         session_duration = session_data['timestamp'].max() - session_data['timestamp'].min()
@@ -261,11 +257,15 @@ class MousePreprocessor:
 
         # 모든 특징 결합
         all_features = {**movement_features, **click_features, **scroll_features, **session_features}
+        
+        # 차원 검증 및 패딩
         feature_vector = list(all_features.values())
         if len(feature_vector) < self.feature_dim:
-            feature_vector.extend([0] * (self.feature_dim - len(feature_vector)))
+            padding = [0.0] * (self.feature_dim - len(feature_vector))
+            feature_vector += padding
         else:
             feature_vector = feature_vector[:self.feature_dim]
+
         return np.array(feature_vector, dtype=np.float32)
 
     def process_dataset(self, data_path: Optional[str] = None, normalize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
@@ -273,8 +273,18 @@ class MousePreprocessor:
         마우스 데이터셋을 처리합니다.
         """
         if data_path and Path(data_path).exists():
-            df = pd.read_csv(data_path)
-            print(f"데이터 로드 완료: {len(df)} 행")
+            # 세션 데이터 로드
+            sessions = []
+            for user_dir in Path(data_path).iterdir():
+                if user_dir.is_dir():
+                    for session_file in user_dir.glob('*.csv'):
+                        df = pd.read_csv(session_file)
+                        df['user_id'] = user_dir.name
+                        sessions.append(df)
+            df = pd.concat(sessions, ignore_index=True)
+            
+            # 컬럼 정제
+            df.columns = ['timestamp', 'x', 'y', 'event_type', 'button', 'user_id']
         else:
             print("데이터 파일이 없어 더미 데이터를 생성합니다.")
             df = self._generate_dummy_mouse_data()
@@ -293,7 +303,7 @@ class MousePreprocessor:
                     features_list.append(session_features)
                     labels_list.append(user_label_map[user_id])
 
-        # 수정: 빈 데이터셋 검증 추가
+        # 빈 데이터셋 검증
         if len(features_list) == 0:
             raise ValueError("처리된 데이터가 없습니다. 데이터셋 구조를 확인하세요.")
 

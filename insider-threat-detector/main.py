@@ -50,9 +50,9 @@ def test_inference(model: SiameseNetwork):
     """추론 테스트"""
     print("\n=== 추론 테스트 ===")
 
-    # 더미 데이터로 테스트
+    # 더미 데이터로 테스트 (차원 64로 수정)
     batch_size = 4
-    input_dim = 128
+    input_dim = 64  # 모델 입력 차원과 일치
 
     # 랜덤 입력 생성
     x1 = torch.randn(batch_size, input_dim)

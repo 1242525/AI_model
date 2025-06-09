@@ -23,77 +23,53 @@ class KeystrokePreprocessor:
         self.user_stats = {}
 
     def parse_cmu_dataset(self, file_path: str) -> pd.DataFrame:
-        """
-        CMU DSL-StrongPasswordData.txt 파일을 파싱합니다.
-
-        Args:
-            file_path: 데이터셋 파일 경로
-
-        Returns:
-            DataFrame: 파싱된 데이터
-        """
-        print(f"CMU 데이터셋 파싱 시작: {file_path}")
-
-        data = []
-
+        """CMU 데이터 정확한 고정 너비 파싱"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                lines = file.readlines()
-
-                # 헤더 라인 찾기
-                header_line = None
-                for i, line in enumerate(lines):
-                    if 'subject' in line.lower() and 'sessionIndex' in line:
-                        header_line = i
-                        break
-
-                if header_line is None:
-                    # 기본 헤더 사용
-                    columns = [
-                        'subject', 'sessionIndex', 'rep',
-                        'H.period', 'DD.period.t', 'UD.period.t',
-                        'H.t', 'DD.t.i', 'UD.t.i',
-                        'H.i', 'DD.i.e', 'UD.i.e',
-                        'H.e', 'DD.e.five', 'UD.e.five',
-                        'H.five', 'DD.five.Shift.r', 'UD.five.Shift.r',
-                        'H.Shift.r', 'DD.Shift.r.o', 'UD.Shift.r.o',
-                        'H.o', 'DD.o.a', 'UD.o.a',
-                        'H.a', 'DD.a.n', 'UD.a.n',
-                        'H.n', 'DD.n.l', 'UD.n.l',
-                        'H.l'
-                    ]
-                else:
-                    # 헤더 파싱
-                    header = lines[header_line].strip().split()
-                    columns = header
-                    lines = lines[header_line + 1:]
-
-                # 데이터 파싱
-                for line in lines:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        parts = line.split()
-                        if len(parts) >= len(columns):
-                            data.append(parts[:len(columns)])
-
+            # 정확한 컬럼 위치 지정 (CMU 데이터셋 구조에 맞춤)
+            colspecs = [
+                (0, 5), (6, 8), (9, 12),   # subject, sessionIndex, rep
+                (13, 20), (21, 28), (29, 36),  # H.period, DD.period.t, UD.period.t
+                (37, 44), (45, 52), (53, 60),  # H.t, DD.t.i, UD.t.i
+                (61, 68), (69, 76), (77, 84),  # H.i, DD.i.e, UD.i.e
+                (85, 92), (93, 100), (101, 108), # H.e, DD.e.five, UD.e.five
+                (109, 116), (117, 124), (125, 132), # H.five, DD.five.Shift.r, UD.five.Shift.r
+                (133, 140), (141, 148), (149, 156), # H.Shift.r, DD.Shift.r.o, UD.Shift.r.o
+                (157, 164), (165, 172), (173, 180), # H.o, DD.o.a, UD.o.a
+                (181, 188), (189, 196), (197, 204), # H.a, DD.a.n, UD.a.n
+                (205, 212), (213, 220), (221, 228)  # H.n, DD.n.l, UD.n.l
+            ]
+            
+            # 정확한 컬럼 이름 (31개)
+            columns = [
+                'subject', 'sessionIndex', 'rep',
+                'H.period', 'DD.period.t', 'UD.period.t',
+                'H.t', 'DD.t.i', 'UD.t.i',
+                'H.i', 'DD.i.e', 'UD.i.e',
+                'H.e', 'DD.e.five', 'UD.e.five',
+                'H.five', 'DD.five.Shift.r', 'UD.five.Shift.r',
+                'H.Shift.r', 'DD.Shift.r.o', 'UD.Shift.r.o',
+                'H.o', 'DD.o.a', 'UD.o.a',
+                'H.a', 'DD.a.n', 'UD.a.n',
+                'H.n', 'DD.n.l', 'UD.n.l'
+            ]
+            
+            df = pd.read_fwf(
+                file_path,
+                colspecs=colspecs,
+                header=0,
+                names=columns,
+                dtype={'subject': str}
+            )
+            
+            # 데이터 타입 변환
+            numeric_cols = df.columns.drop(['subject'])
+            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+            
+            return df
+            
         except Exception as e:
-            print(f"파일 파싱 중 오류 발생: {e}")
-            # 더미 데이터 생성
-            return self._generate_dummy_keystroke_data()
-
-        if not data:
-            print("데이터가 없습니다. 더미 데이터를 생성합니다.")
-            return self._generate_dummy_keystroke_data()
-
-        df = pd.DataFrame(data, columns=columns[:len(data[0])])
-
-        # 데이터 타입 변환
-        numeric_columns = [col for col in df.columns if col not in ['subject']]
-        for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        print(f"파싱 완료: {len(df)} 행, {len(df.columns)} 열")
-        return df
+            print(f"파일 파싱 오류: {e}")
+            raise
 
     def _generate_dummy_keystroke_data(self) -> pd.DataFrame:
         """더미 키스트로크 데이터 생성 (테스트용)"""
@@ -247,14 +223,10 @@ class KeystrokePreprocessor:
             return 0.0
         return np.mean(((data - mean) / std) ** 4) - 3
 
-    def process_dataset(self, file_path: str, normalize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        전체 데이터셋을 처리합니다.
+    
 
-        Returns:
-            features: 특징 배열 (num_samples, feature_dim)
-            labels: 사용자 레이블
-        """
+    def process_dataset(self, file_path: str, normalize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+        """전체 데이터셋 처리"""
         # 데이터 파싱
         df = self.parse_cmu_dataset(file_path)
 
