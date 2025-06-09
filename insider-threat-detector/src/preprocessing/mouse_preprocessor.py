@@ -1,102 +1,29 @@
 """
 파일 경로: C:\Projects\AISecApp\01\insider-threat-detector\src\preprocessing\mouse_preprocessor.py
 파일명: mouse_preprocessor.py
-설명: 마우스 동작 데이터 전처리 및 특징 추출
+설명: Balabit 마우스 데이터셋 전처리 클래스 (확장자 없는 파일/원본 컬럼명 지원)
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 import math
 import warnings
 warnings.filterwarnings('ignore')
 
 class MousePreprocessor:
-    """마우스 동작 데이터 전처리 클래스"""
+    """Balabit 마우스 데이터셋 전처리 클래스"""
 
     def __init__(self, sequence_length: int = 100, feature_dim: int = 64):
         self.sequence_length = sequence_length
         self.feature_dim = feature_dim
         self.scaler = None
 
-    def _generate_dummy_mouse_data(self) -> pd.DataFrame:
-        """더미 마우스 데이터 생성 (테스트용)"""
-        print("더미 마우스 데이터 생성 중...")
-
-        num_users = 10
-        sessions_per_user = 100
-        events_per_session = 500
-
-        data = []
-
-        for user_id in range(1, num_users + 1):
-            for session in range(1, sessions_per_user + 1):
-                user_speed_factor = 1 + (user_id - 1) * 0.2
-                user_precision = 0.1 + (user_id - 1) * 0.05
-                session_start_time = session * 3600
-                current_x, current_y = 400, 300
-
-                for event_id in range(events_per_session):
-                    timestamp = session_start_time + event_id * np.random.exponential(0.1)
-                    event_type = np.random.choice(['move', 'click', 'scroll'], p=[0.8, 0.15, 0.05])
-
-                    if event_type == 'move':
-                        movement_distance = np.random.exponential(50 * user_speed_factor)
-                        angle = np.random.uniform(0, 2 * np.pi)
-                        new_x = current_x + movement_distance * np.cos(angle)
-                        new_y = current_y + movement_distance * np.sin(angle)
-                        new_x = max(0, min(1920, new_x))
-                        new_y = max(0, min(1080, new_y))
-                        current_x, current_y = new_x, new_y
-
-                        data.append({
-                            'user_id': f'user_{user_id}',
-                            'session_id': session,
-                            'timestamp': timestamp,
-                            'event_type': 'move',
-                            'x': current_x,
-                            'y': current_y,
-                            'button': None,
-                            'velocity': movement_distance / 0.1,
-                        })
-
-                    elif event_type == 'click':
-                        button = np.random.choice(['left', 'right'], p=[0.9, 0.1])
-                        data.append({
-                            'user_id': f'user_{user_id}',
-                            'session_id': session,
-                            'timestamp': timestamp,
-                            'event_type': 'click',
-                            'x': current_x,
-                            'y': current_y,
-                            'button': button,
-                            'velocity': 0,
-                        })
-
-                    elif event_type == 'scroll':
-                        scroll_direction = np.random.choice(['up', 'down'])
-                        data.append({
-                            'user_id': f'user_{user_id}',
-                            'session_id': session,
-                            'timestamp': timestamp,
-                            'event_type': 'scroll',
-                            'x': current_x,
-                            'y': current_y,
-                            'button': scroll_direction,
-                            'velocity': 0,
-                        })
-
-        df = pd.DataFrame(data)
-        print(f"더미 마우스 데이터 생성 완료: {len(df)} 이벤트")
-        return df
-
     def extract_movement_features(self, trajectory: np.ndarray) -> Dict[str, float]:
-        """마우스 이동 궤적에서 특징을 추출합니다."""
         if len(trajectory) < 2:
             return self._get_default_movement_features()
-
         x_coords = trajectory[:, 0]
         y_coords = trajectory[:, 1]
         distances = np.sqrt(np.diff(x_coords)**2 + np.diff(y_coords)**2)
@@ -114,7 +41,6 @@ class MousePreprocessor:
                 change = 2 * np.pi - change
             direction_changes.append(change)
         direction_changes = np.array(direction_changes)
-
         features = {
             'total_distance': np.sum(distances),
             'avg_distance': np.mean(distances),
@@ -133,7 +59,6 @@ class MousePreprocessor:
         return features
 
     def _get_default_movement_features(self) -> Dict[str, float]:
-        """기본 이동 특징 반환"""
         return {
             'total_distance': 0, 'avg_distance': 0, 'max_distance': 0,
             'distance_std': 0, 'avg_velocity': 0, 'max_velocity': 0,
@@ -143,7 +68,6 @@ class MousePreprocessor:
         }
 
     def _calculate_linearity(self, trajectory: np.ndarray) -> float:
-        """궤적의 선형성 계산"""
         if len(trajectory) < 2:
             return 0.0
         start_point = trajectory[0]
@@ -157,7 +81,6 @@ class MousePreprocessor:
         return straight_distance / actual_distance
 
     def _calculate_tremor(self, distances: np.ndarray) -> float:
-        """떨림 정도 계산"""
         if len(distances) < 3:
             return 0.0
         accelerations = np.diff(distances)
@@ -165,7 +88,7 @@ class MousePreprocessor:
         return tremor
 
     def extract_click_features(self, click_events):
-        intervals = np.asarray([e['timestamp'] for e in click_events], dtype=np.float64)
+        intervals = np.asarray([e['rtime'] for e in click_events], dtype=np.float64)
         if intervals.size >= 2:
             intervals = np.diff(intervals) * 1000
         else:
@@ -177,74 +100,20 @@ class MousePreprocessor:
             'max_click_interval': intervals.max() if intervals.size > 0 else 0.0
         }
 
-    def extract_scroll_features(self, scroll_data: List[Dict]) -> Dict[str, float]:
-        """스크롤 패턴 특징 추출"""
-        if not scroll_data:
-            return {
-                'scroll_frequency': 0, 'avg_scroll_interval': 0,
-                'scroll_direction_changes': 0, 'scroll_speed': 0,
-            }
-        timestamps = np.array([event['timestamp'] for event in scroll_data], dtype=np.float64)
-        if timestamps.size < 2:
-            return {
-                'scroll_frequency': len(scroll_data),
-                'avg_scroll_interval': 0,
-                'scroll_direction_changes': 0,
-                'scroll_speed': 0,
-            }
-        intervals = np.diff(timestamps)
-        directions = [event.get('button', 'up') for event in scroll_data]
-        direction_changes = 0
-        for i in range(1, len(directions)):
-            if directions[i] != directions[i-1]:
-                direction_changes += 1
-        features = {
-            'scroll_frequency': len(scroll_data),
-            'avg_scroll_interval': np.mean(intervals) if intervals.size > 0 else 0,
-            'scroll_direction_changes': direction_changes,
-            'scroll_speed': len(scroll_data) / (timestamps[-1] - timestamps[0]) if (timestamps[-1] - timestamps[0]) > 0 else 0,
-        }
-        return features
-
     def create_session_features(self, session_data: pd.DataFrame) -> np.ndarray:
-        """세션 데이터에서 특징 벡터 생성"""
-        # 이벤트 타입별 분리
-        move_events = session_data[session_data['event_type'] == 'move']
-        click_events = session_data[session_data['event_type'] == 'click']
-        scroll_events = session_data[session_data['event_type'] == 'scroll']
+        move_events = session_data[session_data['state'] == 'Move']
+        click_events = session_data[session_data['state'].isin(['Pressed', 'Released'])]
+        drag_events = session_data[session_data['state'] == 'Dragging']
 
-        # 이동 궤적 추출
         if len(move_events) > 0:
-            trajectory = move_events[['x', 'y']].values
+            trajectory = move_events[['x', 'y']].values.astype(float)
             movement_features = self.extract_movement_features(trajectory)
         else:
             movement_features = self._get_default_movement_features()
 
-        # 클릭 특징 추출
         click_features = self.extract_click_features(click_events.to_dict('records'))
 
-        # 스크롤 특징 추출
-        if scroll_events.empty:
-            scroll_features = {
-                'scroll_frequency': 0,
-                'avg_scroll_interval': 0,
-                'scroll_direction_changes': 0,
-                'scroll_speed': 0
-            }
-        else:
-            timestamps = scroll_events['timestamp'].values
-            if timestamps.size < 2:
-                scroll_features = {
-                    'scroll_frequency': len(scroll_events),
-                    'avg_scroll_interval': 0,
-                    'scroll_direction_changes': 0,
-                    'scroll_speed': 0
-                }
-            else:
-                scroll_features = self.extract_scroll_features(scroll_events.to_dict('records'))
-
-        # 세션 전체 특징
-        session_duration = session_data['timestamp'].max() - session_data['timestamp'].min()
+        session_duration = session_data['rtime'].max() - session_data['rtime'].min()
         total_events = len(session_data)
         session_features = {
             'session_duration': session_duration,
@@ -252,13 +121,10 @@ class MousePreprocessor:
             'events_per_second': total_events / session_duration if session_duration > 0 else 0,
             'move_ratio': len(move_events) / total_events if total_events > 0 else 0,
             'click_ratio': len(click_events) / total_events if total_events > 0 else 0,
-            'scroll_ratio': len(scroll_events) / total_events if total_events > 0 else 0,
+            'drag_ratio': len(drag_events) / total_events if total_events > 0 else 0,
         }
 
-        # 모든 특징 결합
-        all_features = {**movement_features, **click_features, **scroll_features, **session_features}
-        
-        # 차원 검증 및 패딩
+        all_features = {**movement_features, **click_features, **session_features}
         feature_vector = list(all_features.values())
         if len(feature_vector) < self.feature_dim:
             padding = [0.0] * (self.feature_dim - len(feature_vector))
@@ -268,60 +134,87 @@ class MousePreprocessor:
 
         return np.array(feature_vector, dtype=np.float32)
 
-    def process_dataset(self, data_path: Optional[str] = None, normalize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        마우스 데이터셋을 처리합니다.
-        """
-        if data_path and Path(data_path).exists():
-            # 세션 데이터 로드
-            sessions = []
-            for user_dir in Path(data_path).iterdir():
-                if user_dir.is_dir():
-                    for session_file in user_dir.glob('*.csv'):
-                        df = pd.read_csv(session_file)
-                        df['user_id'] = user_dir.name
-                        sessions.append(df)
-            df = pd.concat(sessions, ignore_index=True)
-            
-            # 컬럼 정제
-            df.columns = ['timestamp', 'x', 'y', 'event_type', 'button', 'user_id']
-        else:
-            print("데이터 파일이 없어 더미 데이터를 생성합니다.")
-            df = self._generate_dummy_mouse_data()
+    def process_dataset(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Balabit 마우스 데이터셋 처리"""
+        # 데이터 경로 설정
+        balabit_path = Path(r"C:\Projects\AISecApp\01\insider-threat-detector\data\raw\mouse\Mouse-Dynamics-Challenge\training_files")
+        
+        if not balabit_path.exists():
+            raise FileNotFoundError(f"Balabit 데이터셋 경로를 찾을 수 없습니다: {balabit_path}")
 
+        # 세션 데이터 로드
+        sessions = []
+        for user_dir in balabit_path.iterdir():
+            if user_dir.is_dir() and user_dir.name.startswith('user'):
+                print(f"사용자 디렉터리 처리 중: {user_dir.name}")
+                session_files = list(user_dir.glob('*'))  # 확장자 없는 파일 포함
+                
+                for session_file in session_files:
+                    try:
+                        # 컬럼명 직접 지정 (Balabit 원본 구조)
+                        df = pd.read_csv(session_file, names=[
+                            'record timestamp',
+                            'client timestamp',
+                            'button',
+                            'state',
+                            'x',
+                            'y'
+                        ])
+                        
+                        df['user_id'] = user_dir.name  # 사용자 ID 추가
+                        sessions.append(df)
+                        print(f"세션 로드 완료: {session_file.name}")
+                    except Exception as e:
+                        print(f"경고: {session_file} 처리 실패 - {str(e)}")
+                        continue
+
+        if not sessions:
+            error_msg = """
+            처리된 세션 데이터가 없습니다. 다음 사항을 확인하세요:
+            1. 데이터셋 경로: data/raw/mouse/Mouse-Dynamics-Challenge/training_files
+            2. CSV 파일 존재 여부 (확장자 없음)
+            3. 컬럼 구조: record timestamp,client timestamp,button,state,x,y
+            """
+            raise FileNotFoundError(error_msg)
+
+        df = pd.concat(sessions, ignore_index=True)
+        
+        # 데이터 정제
+        df = df.sort_values(by=['user_id', 'record timestamp'])  # ✅ 실제 컬럼명 사용
+        df = df.dropna()
+        df = df.reset_index(drop=True)
+
+        # 특징 추출 로직 (이하 동일)
         features_list = []
         labels_list = []
-
         user_label_map = {user: idx for idx, user in enumerate(df['user_id'].unique())}
 
         for user_id in df['user_id'].unique():
             user_data = df[df['user_id'] == user_id]
-            for session_id in user_data['session_id'].unique():
-                session_data = user_data[user_data['session_id'] == session_id]
-                if len(session_data) >= 1:
+            # 60초 간격으로 세션 분할
+            time_diff = user_data['rtime'].diff().gt(60).cumsum()
+            for session_id, session_data in user_data.groupby(time_diff):
+                if len(session_data) >= 5:
                     session_features = self.create_session_features(session_data)
                     features_list.append(session_features)
                     labels_list.append(user_label_map[user_id])
 
-        # 빈 데이터셋 검증
         if len(features_list) == 0:
-            raise ValueError("처리된 데이터가 없습니다. 데이터셋 구조를 확인하세요.")
+            raise ValueError("세션별 feature 추출 결과가 없습니다. 데이터 파일의 컬럼(rtime, state 등)과 내용이 올바른지 확인하세요.")
 
         features = np.array(features_list)
         labels = np.array(labels_list)
 
-        if normalize:
-            if self.scaler is None:
-                self.scaler = StandardScaler()
-                features = self.scaler.fit_transform(features)
-            else:
-                features = self.scaler.transform(features)
+        if self.scaler is None:
+            self.scaler = StandardScaler()
+            features = self.scaler.fit_transform(features)
+        else:
+            features = self.scaler.transform(features)
 
         print(f"마우스 데이터셋 처리 완료: {features.shape[0]} 샘플, {features.shape[1]} 특징")
         return features, labels
 
     def save_processed_data(self, features: np.ndarray, labels: np.ndarray, save_path: str):
-        """처리된 데이터를 저장합니다."""
         processed_data = {
             'features': features,
             'labels': labels,
@@ -331,10 +224,9 @@ class MousePreprocessor:
         np.savez(save_path, **processed_data)
         print(f"처리된 마우스 데이터 저장 완료: {save_path}")
 
-def preprocess_mouse_data(data_path: Optional[str] = None, output_path: str = "mouse_processed.npz", feature_dim: int = 64) -> Tuple[np.ndarray, np.ndarray]:
-    """마우스 데이터 전처리 메인 함수"""
+def preprocess_mouse_data(output_path: str = "mouse_processed.npz", feature_dim: int = 64) -> Tuple[np.ndarray, np.ndarray]:
     preprocessor = MousePreprocessor(feature_dim=feature_dim)
-    features, labels = preprocessor.process_dataset(data_path)
+    features, labels = preprocessor.process_dataset()
     preprocessor.save_processed_data(features, labels, output_path)
     return features, labels
 
