@@ -147,11 +147,11 @@ class MousePreprocessor:
         for user_dir in balabit_path.iterdir():
             if user_dir.is_dir() and user_dir.name.startswith('user'):
                 print(f"사용자 디렉터리 처리 중: {user_dir.name}")
-                session_files = list(user_dir.glob('*'))  # 확장자 없는 파일 포함
+                session_files = list(user_dir.glob('*'))
                 
                 for session_file in session_files:
                     try:
-                        # 컬럼명 직접 지정 (Balabit 원본 구조)
+                        # 컬럼명 명시적 지정 및 정제
                         df = pd.read_csv(session_file, names=[
                             'record timestamp',
                             'client timestamp',
@@ -160,8 +160,14 @@ class MousePreprocessor:
                             'x',
                             'y'
                         ])
+    
+                        # 컬럼명 정제
+                        df = df.rename(columns={
+                            'record timestamp': 'rtime',
+                            'client timestamp': 'ctime'
+                        })
                         
-                        df['user_id'] = user_dir.name  # 사용자 ID 추가
+                        df['user_id'] = user_dir.name
                         sessions.append(df)
                         print(f"세션 로드 완료: {session_file.name}")
                     except Exception as e:
@@ -171,40 +177,41 @@ class MousePreprocessor:
         if not sessions:
             error_msg = """
             처리된 세션 데이터가 없습니다. 다음 사항을 확인하세요:
-            1. 데이터셋 경로: data/raw/mouse/Mouse-Dynamics-Challenge/training_files
-            2. CSV 파일 존재 여부 (확장자 없음)
-            3. 컬럼 구조: record timestamp,client timestamp,button,state,x,y
+            1. CSV 파일 존재 여부
+            2. 파일 컬럼 구조: record timestamp,x,y,state,button
+            3. 사용자 디렉터리 명명 규칙(user로 시작)
             """
             raise FileNotFoundError(error_msg)
 
         df = pd.concat(sessions, ignore_index=True)
         
         # 데이터 정제
-        df = df.sort_values(by=['user_id', 'record timestamp'])  # ✅ 실제 컬럼명 사용
+        df = df.sort_values(by=['user_id', 'rtime'])  # ✅ 컬럼명 변경
         df = df.dropna()
         df = df.reset_index(drop=True)
 
-        # 특징 추출 로직 (이하 동일)
+        # 특징 추출
         features_list = []
         labels_list = []
+
         user_label_map = {user: idx for idx, user in enumerate(df['user_id'].unique())}
 
         for user_id in df['user_id'].unique():
             user_data = df[df['user_id'] == user_id]
-            # 60초 간격으로 세션 분할
-            time_diff = user_data['rtime'].diff().gt(60).cumsum()
+            
+            # 세션 구분 (60초 간격으로 세션 분할)
+            time_diff = df['rtime'].diff().gt(60).cumsum()  # ✅ 컬럼명 변경
             for session_id, session_data in user_data.groupby(time_diff):
                 if len(session_data) >= 5:
                     session_features = self.create_session_features(session_data)
                     features_list.append(session_features)
                     labels_list.append(user_label_map[user_id])
 
-        if len(features_list) == 0:
-            raise ValueError("세션별 feature 추출 결과가 없습니다. 데이터 파일의 컬럼(rtime, state 등)과 내용이 올바른지 확인하세요.")
-
+        # 특징 배열 변환
         features = np.array(features_list)
         labels = np.array(labels_list)
 
+        # 정규화
         if self.scaler is None:
             self.scaler = StandardScaler()
             features = self.scaler.fit_transform(features)
@@ -213,6 +220,7 @@ class MousePreprocessor:
 
         print(f"마우스 데이터셋 처리 완료: {features.shape[0]} 샘플, {features.shape[1]} 특징")
         return features, labels
+
 
     def save_processed_data(self, features: np.ndarray, labels: np.ndarray, save_path: str):
         processed_data = {
