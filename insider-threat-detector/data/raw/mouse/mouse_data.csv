@@ -1,0 +1,7 @@
+user_id,session_id,timestamp,event_type,x,y,button,velocity
+user_1,1,1000.0,move,400,300,,45.2
+user_1,1,1100.0,move,445,310,,38.1
+user_1,1,1200.0,click,445,310,left,0.0
+user_1,1,1300.0,move,450,315,,5.2
+user_2,1,2000.0,move,500,400,,52.1
+user_2,1,2100.0,click,500,400,left,0.0
