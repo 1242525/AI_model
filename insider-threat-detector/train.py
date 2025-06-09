@@ -4,21 +4,22 @@
 설명: Siamese Network 훈련 메인 스크립트
 """
 
+from collections import defaultdict  # 추가된 부분
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, random_split
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 import random
-from typing import Tuple, List, Dict, Optional
 import logging
 import json
 import sys
 import os
+from pathlib import Path
+from tqdm import tqdm
+from typing import Tuple, List, Dict, Optional
+from torch.utils.data import DataLoader, Dataset, random_split
 
 # 프로젝트 모듈 import
 sys.path.append(str(Path(__file__).parent))
@@ -56,29 +57,27 @@ class BehaviorDataset(Dataset):
     def _create_pairs(self) -> List[Tuple]:
         """훈련용 positive/negative 페어 생성"""
         pairs = []
-
-        # 키스트로크 데이터에서 페어 생성
+        user_samples = defaultdict(list)
+        
+        # 사용자별 샘플 그룹화
         for i in range(len(self.keystroke_features)):
-            for j in range(i + 1, len(self.keystroke_features)):
-                # 같은 사용자인지 확인
-                label = 0 if self.keystroke_labels[i] == self.keystroke_labels[j] else 1
-
-                # 키스트로크 + 마우스 특징 결합
-                # 간단히 하기 위해 첫 번째 마우스 샘플을 사용
-                mouse_idx_i = min(i, len(self.mouse_features) - 1)
-                mouse_idx_j = min(j, len(self.mouse_features) - 1)
-
-                feature1 = np.concatenate([
-                    self.keystroke_features[i], 
-                    self.mouse_features[mouse_idx_i]
-                ])
-                feature2 = np.concatenate([
-                    self.keystroke_features[j], 
-                    self.mouse_features[mouse_idx_j]
-                ])
-
-                pairs.append((feature1, feature2, label))
-
+            user = self.keystroke_labels[i]
+            user_samples[user].append(i)
+        
+        # 각 사용자당 100개 페어만 생성
+        for user, indices in user_samples.items():
+            for _ in range(100):
+                if len(indices) >= 2:
+                    i, j = random.sample(indices, 2)
+                    pairs.append((i, j, 0))  # Positive pair
+                
+                # Negative pair
+                other_users = [u for u in user_samples.keys() if u != user]
+                if other_users:
+                    other_user = random.choice(other_users)
+                    j = random.choice(user_samples[other_user])
+                    pairs.append((i, j, 1))
+        
         return pairs
 
     def __len__(self):
@@ -165,19 +164,19 @@ class Trainer:
 
         # 데이터 로더 생성
         train_loader = DataLoader(
-            train_dataset, 
+            train_dataset,
             batch_size=self.config['training']['batch_size'],
             shuffle=True,
-            num_workers=2,
-            pin_memory=True
+            num_workers=0,  # Windows에서는 0으로 설정
+            persistent_workers=False  # Windows 호환성
         )
 
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config['training']['batch_size'],
             shuffle=False,
-            num_workers=2,
-            pin_memory=True
+            num_workers=0,  # Windows에서는 0으로 설정
+            persistent_workers=False
         )
 
         logger.info(f"훈련 데이터: {len(train_dataset)} 샘플")

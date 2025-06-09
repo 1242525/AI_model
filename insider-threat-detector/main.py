@@ -5,8 +5,9 @@
 """
 
 import sys
-import argparse
 import torch
+import argparse
+import multiprocessing
 import numpy as np
 from pathlib import Path
 
@@ -180,4 +181,6 @@ def main():
         print(f"알 수 없는 모드: {args.mode}")
 
 if __name__ == "__main__":
+    # Windows에서의 멀티프로세싱 이슈 해결
+    multiprocessing.freeze_support()
     main()

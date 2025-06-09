@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # 프로젝트 루트 디렉터리
-PROJECT_ROOT = Path(r"C:\Projects\AISecApp\01\insider-threat-detector")
+PROJECT_ROOT = Path(r"C:/Projects/AISecApp/01/insider-threat-detector")
 
 # 데이터 경로 설정
 DATA_ROOT = PROJECT_ROOT / "data"
